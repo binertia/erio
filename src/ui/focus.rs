@@ -36,6 +36,19 @@ impl FocusManager {
         self.move_by(-1)
     }
 
+    pub fn set_order(&mut self, order: &[PanelId]) {
+        if order.is_empty() {
+            return;
+        }
+        if self.order == order {
+            return;
+        }
+        self.order = order.to_vec();
+        if !self.order.contains(&self.focused) {
+            self.focused = self.order[0];
+        }
+    }
+
     fn move_by(&mut self, delta: isize) -> bool {
         if self.order.is_empty() {
             return false;
@@ -74,5 +87,21 @@ mod tests {
         let mut focus = FocusManager::new(vec![PanelId::Projects]);
         assert!(!focus.set_focus(PanelId::Status));
         assert_eq!(focus.focused(), PanelId::Projects);
+    }
+
+    #[test]
+    fn set_order_filters_focus_to_first_when_current_is_removed() {
+        let mut focus = FocusManager::new(vec![PanelId::Projects, PanelId::Containers]);
+        focus.set_focus(PanelId::Containers);
+        focus.set_order(&[PanelId::Projects, PanelId::Main]);
+        assert_eq!(focus.focused(), PanelId::Projects);
+    }
+
+    #[test]
+    fn set_order_preserves_focus_when_current_remains() {
+        let mut focus = FocusManager::new(vec![PanelId::Projects, PanelId::Containers]);
+        focus.set_focus(PanelId::Containers);
+        focus.set_order(&[PanelId::Containers, PanelId::Main]);
+        assert_eq!(focus.focused(), PanelId::Containers);
     }
 }

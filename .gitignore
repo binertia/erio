@@ -5,3 +5,9 @@
 .env.local
 *.log
 *.bak
+
+ARCHITECTURE.md
+DECISIONS.md
+GEMINI.md
+OPTIMIZATION_PLAN.md
+TASKS.md

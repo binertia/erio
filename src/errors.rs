@@ -12,6 +12,8 @@ pub enum AppError {
     EventBusClosed,
     #[error("task join error: {0}")]
     Join(#[from] tokio::task::JoinError),
+    #[error("{0}")]
+    Generic(String),
 }
 
 pub type AppResult<T> = Result<T, AppError>;

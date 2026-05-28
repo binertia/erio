@@ -1,7 +1,8 @@
-use std::io::{self, Stdout};
+use std::io::{self, Stdout, Write};
 
 use crossterm::{
     cursor::{Hide, Show},
+    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{
         EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -19,6 +20,7 @@ pub struct TerminalSession {
     terminal: AppTerminal,
     alternate_screen: bool,
     raw_mode: bool,
+    mouse_capture: bool,
     active: bool,
 }
 
@@ -28,6 +30,7 @@ impl TerminalSession {
             terminal: Terminal::new(CrosstermBackend::new(io::stdout()))?,
             alternate_screen: false,
             raw_mode: false,
+            mouse_capture: false,
             active: false,
         };
 
@@ -40,6 +43,9 @@ impl TerminalSession {
             execute!(io::stdout(), EnterAlternateScreen, Hide)?;
             session.alternate_screen = true;
         }
+
+        execute!(io::stdout(), EnableMouseCapture)?;
+        session.mouse_capture = true;
 
         session.active = true;
         Ok(session)
@@ -55,6 +61,13 @@ impl TerminalSession {
         }
 
         let mut first_error = None;
+
+        if self.mouse_capture {
+            if let Err(err) = execute!(self.terminal.backend_mut(), DisableMouseCapture) {
+                first_error.get_or_insert(err);
+            }
+            self.mouse_capture = false;
+        }
 
         if self.alternate_screen {
             if let Err(err) = execute!(self.terminal.backend_mut(), Show, LeaveAlternateScreen) {
@@ -76,6 +89,48 @@ impl TerminalSession {
             Some(err) => Err(err),
             None => Ok(()),
         }
+    }
+
+    /// Temporarily leave alternate screen and disable raw mode so an external
+    /// interactive process can take over the terminal.
+    pub fn suspend(&mut self) -> io::Result<()> {
+        if self.mouse_capture {
+            execute!(io::stdout(), DisableMouseCapture)?;
+            self.mouse_capture = false;
+        }
+        if self.raw_mode {
+            disable_raw_mode()?;
+            self.raw_mode = false;
+        }
+        if self.alternate_screen {
+            execute!(io::stdout(), Show, LeaveAlternateScreen)?;
+            self.alternate_screen = false;
+        }
+        // Ensure any buffered backend output is flushed before handing
+        // the terminal to the external process.
+        self.terminal.backend_mut().flush()?;
+        Ok(())
+    }
+
+    /// Re-enter alternate screen and re-enable raw mode after an external
+    /// process has finished.
+    pub fn resume(&mut self, config: &TerminalConfig) -> io::Result<()> {
+        // Always explicitly re-apply our terminal state; the external
+        // command may have left raw mode or other settings changed.
+        if config.raw_mode {
+            enable_raw_mode()?;
+            self.raw_mode = true;
+        }
+        if config.alternate_screen {
+            execute!(io::stdout(), EnterAlternateScreen, Hide)?;
+            self.alternate_screen = true;
+        }
+        execute!(io::stdout(), EnableMouseCapture)?;
+        self.mouse_capture = true;
+        self.terminal.clear()?;
+        self.terminal.backend_mut().flush()?;
+        self.active = true;
+        Ok(())
     }
 }
 

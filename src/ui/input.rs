@@ -8,7 +8,23 @@ use super::panel::PanelId;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputEvent {
     Key(KeyStroke),
+    Mouse(MouseEvent),
     Resize { width: u16, height: u16 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MouseEvent {
+    pub kind: MouseEventKind,
+    pub column: u16,
+    pub row: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouseEventKind {
+    Down,
+    Up,
+    ScrollUp,
+    ScrollDown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +43,37 @@ pub enum InputAction {
     MoveUp,
     MoveDown,
     SetMainContext(MainContext),
+    StartContainer,
+    StopContainer,
+    RestartContainer,
+    RestartOptions,
+    DeleteSelected,
+    Prune,
+    StartSearch,
+    ShowHelp,
+    ScrollMainUp,
+    ScrollMainDown,
+    ScrollMainUpLarge,
+    ScrollMainDownLarge,
+    ScrollMainTop,
+    ScrollMainBottom,
+    ScrollMainLeft,
+    ScrollMainRight,
+    Confirm,
+    Cancel,
     Redraw,
+    ExecShell,
+    AttachContainer,
+    GlobalCustomCommands,
+    ProjectUp,
+    ProjectDown,
+    ProjectLogs,
+    BulkCommands,
+    OpenInBrowser,
+    NextScreenMode,
+    PreviousScreenMode,
+    OptionsMenu,
+    Leader,
 }
 
 impl From<KeyEvent> for KeyStroke {
@@ -43,6 +89,7 @@ pub fn map_key(key: KeyStroke) -> InputAction {
     match (key.code, key.modifiers) {
         (KeyCode::Char('c'), KeyModifiers::CONTROL) => InputAction::Quit,
         (KeyCode::Char('q'), _) => InputAction::Quit,
+        (KeyCode::Char(' '), _) => InputAction::Leader,
         (KeyCode::Right, _) | (KeyCode::Tab, _) | (KeyCode::Char(']'), _) => InputAction::FocusNext,
         (KeyCode::Left, _) | (KeyCode::BackTab, _) | (KeyCode::Char('['), _) => {
             InputAction::FocusPrevious
@@ -50,9 +97,38 @@ pub fn map_key(key: KeyStroke) -> InputAction {
         (KeyCode::Char('j'), _) | (KeyCode::Down, _) => InputAction::MoveDown,
         (KeyCode::Char('k'), _) | (KeyCode::Up, _) => InputAction::MoveUp,
         (KeyCode::Char('l'), _) => InputAction::SetMainContext(MainContext::Logs),
-        (KeyCode::Char('s'), _) => InputAction::SetMainContext(MainContext::Stats),
+        (KeyCode::Char('S'), _) => InputAction::SetMainContext(MainContext::Stats),
         (KeyCode::Char('c'), _) => InputAction::SetMainContext(MainContext::Config),
         (KeyCode::Char('e'), _) => InputAction::SetMainContext(MainContext::Env),
+        (KeyCode::Char('s'), _) => InputAction::StopContainer,
+        (KeyCode::Char('u'), _) => InputAction::StartContainer,
+        (KeyCode::Char('r'), _) => InputAction::RestartContainer,
+        (KeyCode::Char('R'), _) => InputAction::RestartOptions,
+        (KeyCode::Char('d'), _) => InputAction::DeleteSelected,
+        (KeyCode::Char('E'), _) => InputAction::ExecShell,
+        (KeyCode::Char('a'), _) => InputAction::AttachContainer,
+        (KeyCode::Char('X'), _) => InputAction::GlobalCustomCommands,
+        (KeyCode::Char('U'), _) => InputAction::ProjectUp,
+        (KeyCode::Char('D'), _) => InputAction::ProjectDown,
+        (KeyCode::Char('m'), _) => InputAction::ProjectLogs,
+        (KeyCode::Char('b'), _) => InputAction::BulkCommands,
+        (KeyCode::Char('w'), _) => InputAction::OpenInBrowser,
+        (KeyCode::Char('x'), _) => InputAction::OptionsMenu,
+        (KeyCode::Char('p'), _) => InputAction::Prune,
+        (KeyCode::Char('/'), _) => InputAction::StartSearch,
+        (KeyCode::Char('h'), _) | (KeyCode::Char('?'), _) => InputAction::ShowHelp,
+        (KeyCode::Char('y'), _) => InputAction::Confirm,
+        (KeyCode::Char('n'), _) => InputAction::Cancel,
+        (KeyCode::PageUp, _) => InputAction::ScrollMainUp,
+        (KeyCode::PageDown, _) => InputAction::ScrollMainDown,
+        (KeyCode::Char('K'), _) => InputAction::ScrollMainUpLarge,
+        (KeyCode::Char('J'), _) => InputAction::ScrollMainDownLarge,
+        (KeyCode::Home, _) => InputAction::ScrollMainTop,
+        (KeyCode::End, _) => InputAction::ScrollMainBottom,
+        (KeyCode::Char('H'), _) => InputAction::ScrollMainLeft,
+        (KeyCode::Char('L'), _) => InputAction::ScrollMainRight,
+        (KeyCode::Char('+'), _) => InputAction::NextScreenMode,
+        (KeyCode::Char('_'), _) => InputAction::PreviousScreenMode,
         (KeyCode::Char('1'), _) => InputAction::FocusPanel(PanelId::Projects),
         (KeyCode::Char('2'), _) => InputAction::FocusPanel(PanelId::Services),
         (KeyCode::Char('3'), _) => InputAction::FocusPanel(PanelId::Containers),
@@ -72,6 +148,25 @@ pub fn read_terminal_input(timeout: Duration) -> std::io::Result<Option<InputEve
     loop {
         match event::read()? {
             CrosstermEvent::Key(key) => return Ok(Some(InputEvent::Key(KeyStroke::from(key)))),
+            CrosstermEvent::Mouse(mouse) => {
+                let kind = match mouse.kind {
+                    event::MouseEventKind::Down(_) => MouseEventKind::Down,
+                    event::MouseEventKind::Up(_) => MouseEventKind::Up,
+                    event::MouseEventKind::ScrollDown => MouseEventKind::ScrollDown,
+                    event::MouseEventKind::ScrollUp => MouseEventKind::ScrollUp,
+                    _ => {
+                        if !event::poll(Duration::from_millis(0))? {
+                            return Ok(None);
+                        }
+                        continue;
+                    }
+                };
+                return Ok(Some(InputEvent::Mouse(MouseEvent {
+                    kind,
+                    column: mouse.column,
+                    row: mouse.row,
+                })));
+            }
             CrosstermEvent::Resize(width, height) => {
                 return Ok(Some(InputEvent::Resize { width, height }));
             }
